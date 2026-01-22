@@ -22,24 +22,55 @@ const onlineCount = document.getElementById('online-count');
 // File Transfer Elements
 const transferUploadZone = document.getElementById('transfer-upload-zone');
 const transferFileInput = document.getElementById('transfer-file-input');
-const transferFileInfo = document.getElementById('transfer-file-info');
+const transferFolderInput = document.getElementById('transfer-folder-input');
+const transferFilesPreview = document.getElementById('transfer-files-preview');
 const transferUploadBtn = document.getElementById('transfer-upload-btn');
+const uploadBtnText = document.getElementById('upload-btn-text');
+const uploadProgressContainer = document.getElementById('upload-progress-container');
+const uploadProgressFill = document.getElementById('upload-progress-fill');
+const uploadProgressText = document.getElementById('upload-progress-text');
+const selectFilesBtn = document.getElementById('select-files-btn');
+const selectFolderBtn = document.getElementById('select-folder-btn');
 const fileCodeInput = document.getElementById('file-code-input');
 const fileFetchBtn = document.getElementById('file-fetch-btn');
 const fileDeleteBtn = document.getElementById('file-delete-btn');
 const transferFilesList = document.getElementById('transfer-files-list');
+const uploadResultsList = document.getElementById('upload-results-list');
 
 // Modal Elements
 const uploadSuccessModal = document.getElementById('upload-success-modal');
-const modalFilename = document.getElementById('modal-filename');
-const modalCode = document.getElementById('modal-code');
-const copyCodeBtn = document.getElementById('copy-code-btn');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 
+// My Files Modal Elements
+const myFilesBtn = document.getElementById('my-files-btn');
+const myFilesModal = document.getElementById('my-files-modal');
+const myFilesList = document.getElementById('my-files-list');
+const myFilesCloseBtn = document.getElementById('my-files-close-btn');
+
 let selectedFile = null;
-let transferFile = null;
-let myUploadedFiles = []; // Track files uploaded in this session
+let transferFiles = []; // Changed to array for multi-file support
+let uploadResults = []; // Store upload results for modal
+let myUploadedFiles = loadMyUploadedFiles(); // Load from localStorage
 let ws = null;
+
+// Load my uploaded files from localStorage
+function loadMyUploadedFiles() {
+    try {
+        const stored = localStorage.getItem('myUploadedFiles');
+        return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+// Save my uploaded files to localStorage
+function saveMyUploadedFiles() {
+    try {
+        localStorage.setItem('myUploadedFiles', JSON.stringify(myUploadedFiles));
+    } catch (e) {
+        console.error('Failed to save to localStorage:', e);
+    }
+}
 
 // Supported file types for printing
 const SUPPORTED_TYPES = [
@@ -173,7 +204,29 @@ function escapeHtml(text) {
 }
 
 // ==================== File Transfer ====================
-transferUploadZone.addEventListener('click', () => transferFileInput.click());
+
+// Select files button
+selectFilesBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectFilesBtn.classList.add('active');
+    selectFolderBtn.classList.remove('active');
+    transferFileInput.click();
+});
+
+// Select folder button
+selectFolderBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectFolderBtn.classList.add('active');
+    selectFilesBtn.classList.remove('active');
+    transferFolderInput.click();
+});
+
+// Click on upload zone (default to file selection)
+transferUploadZone.addEventListener('click', (e) => {
+    if (e.target === transferUploadZone || e.target.tagName === 'SVG' || e.target.tagName === 'SPAN' || e.target.tagName === 'path' || e.target.tagName === 'line' || e.target.tagName === 'polyline') {
+        transferFileInput.click();
+    }
+});
 
 transferUploadZone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -188,95 +241,383 @@ transferUploadZone.addEventListener('drop', (e) => {
     e.preventDefault();
     transferUploadZone.classList.remove('dragover');
     
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        handleTransferFile(files[0]);
+    const items = e.dataTransfer.items;
+    const files = [];
+    
+    // Handle both files and folders via DataTransferItemList
+    if (items) {
+        const promises = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i].webkitGetAsEntry();
+            if (item) {
+                promises.push(traverseFileTree(item));
+            }
+        }
+        Promise.all(promises).then(results => {
+            const allFiles = results.flat();
+            if (allFiles.length > 0) {
+                handleTransferFiles(allFiles);
+            }
+        });
+    } else {
+        // Fallback for browsers without DataTransferItemList
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        if (droppedFiles.length > 0) {
+            handleTransferFiles(droppedFiles);
+        }
     }
 });
+
+// Recursively traverse file tree for folder drops
+function traverseFileTree(item, path = '') {
+    return new Promise((resolve) => {
+        if (item.isFile) {
+            item.file(file => {
+                // Add relative path info
+                file.relativePath = path + file.name;
+                resolve([file]);
+            });
+        } else if (item.isDirectory) {
+            const dirReader = item.createReader();
+            dirReader.readEntries(entries => {
+                const promises = entries.map(entry => 
+                    traverseFileTree(entry, path + item.name + '/')
+                );
+                Promise.all(promises).then(results => {
+                    resolve(results.flat());
+                });
+            });
+        } else {
+            resolve([]);
+        }
+    });
+}
 
 transferFileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
-        handleTransferFile(e.target.files[0]);
+        handleTransferFiles(Array.from(e.target.files));
     }
 });
 
-function handleTransferFile(file) {
-    if (file.size > 100 * 1024 * 1024) { // 100MB limit
-        showToast('文件大小超过限制 (最大 100MB)', 'error');
+transferFolderInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        const files = Array.from(e.target.files);
+        // Add relative path from webkitRelativePath
+        files.forEach(file => {
+            file.relativePath = file.webkitRelativePath || file.name;
+        });
+        handleTransferFiles(files);
+    }
+});
+
+function handleTransferFiles(files) {
+    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB per file
+    const MAX_TOTAL_SIZE = 500 * 1024 * 1024; // 500MB total
+    const MAX_FILES = 50; // Max 50 files at once
+    
+    let validFiles = [];
+    let totalSize = 0;
+    let skippedCount = 0;
+    
+    for (const file of files) {
+        if (file.size > MAX_FILE_SIZE) {
+            skippedCount++;
+            continue;
+        }
+        if (totalSize + file.size > MAX_TOTAL_SIZE) {
+            skippedCount++;
+            continue;
+        }
+        if (validFiles.length >= MAX_FILES) {
+            skippedCount++;
+            continue;
+        }
+        validFiles.push(file);
+        totalSize += file.size;
+    }
+    
+    if (skippedCount > 0) {
+        showToast(`已跳过 ${skippedCount} 个文件（超过大小限制或数量限制）`, 'warning');
+    }
+    
+    if (validFiles.length === 0) {
+        showToast('没有有效的文件可上传', 'error');
         return;
     }
     
-    transferFile = file;
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-    transferFileInfo.textContent = `📁 ${file.name} (${sizeMB} MB)`;
-    transferFileInfo.classList.add('visible');
-    transferUploadBtn.disabled = false;
+    transferFiles = validFiles;
+    renderTransferFilesPreview();
+    updateUploadButton();
+}
+
+function renderTransferFilesPreview() {
+    if (transferFiles.length === 0) {
+        transferFilesPreview.innerHTML = '';
+        transferFilesPreview.classList.remove('visible');
+        return;
+    }
+    
+    const totalSize = transferFiles.reduce((sum, f) => sum + f.size, 0);
+    const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+    
+    let html = `
+        <div class="files-preview-header">
+            <span class="files-count">${transferFiles.length} 个文件</span>
+            <span class="files-size">共 ${totalSizeMB} MB</span>
+            <button class="clear-files-btn" id="clear-files-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                清除
+            </button>
+        </div>
+        <div class="files-preview-list">
+    `;
+    
+    // Show first 5 files, then show "+X more"
+    const displayFiles = transferFiles.slice(0, 5);
+    const moreCount = transferFiles.length - 5;
+    
+    displayFiles.forEach((file, index) => {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        const displayName = file.relativePath || file.name;
+        html += `
+            <div class="preview-file-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span class="preview-file-name" title="${displayName}">${displayName}</span>
+                <span class="preview-file-size">${sizeMB} MB</span>
+                <button class="remove-file-btn" data-index="${index}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        `;
+    });
+    
+    if (moreCount > 0) {
+        html += `<div class="preview-more-files">还有 ${moreCount} 个文件...</div>`;
+    }
+    
+    html += '</div>';
+    
+    transferFilesPreview.innerHTML = html;
+    transferFilesPreview.classList.add('visible');
+    
+    // Add event listeners
+    document.getElementById('clear-files-btn').addEventListener('click', resetTransferUpload);
+    
+    transferFilesPreview.querySelectorAll('.remove-file-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const index = parseInt(btn.dataset.index);
+            transferFiles.splice(index, 1);
+            renderTransferFilesPreview();
+            updateUploadButton();
+        });
+    });
+}
+
+function updateUploadButton() {
+    if (transferFiles.length === 0) {
+        transferUploadBtn.disabled = true;
+        uploadBtnText.textContent = '确认上传文件';
+    } else {
+        transferUploadBtn.disabled = false;
+        uploadBtnText.textContent = `上传 ${transferFiles.length} 个文件`;
+    }
 }
 
 transferUploadBtn.addEventListener('click', async () => {
-    if (!transferFile) return;
-    
-    const formData = new FormData();
-    formData.append('file', transferFile);
+    if (transferFiles.length === 0) return;
     
     transferUploadBtn.disabled = true;
-    transferUploadBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;">
-            <path d="M21 12a9 9 0 11-6.219-8.56"></path>
-        </svg>
-        上传中...
-    `;
+    uploadProgressContainer.classList.add('visible');
+    uploadProgressFill.style.width = '0%';
+    uploadProgressText.textContent = `正在上传 ${transferFiles.length} 个文件...`;
+    
+    // Use batch upload API - all files share one code
+    const formData = new FormData();
+    transferFiles.forEach(file => {
+        formData.append('files', file);
+    });
     
     try {
-        const response = await fetch('/api/transfer/upload', {
-            method: 'POST',
-            body: formData
+        // Create XMLHttpRequest for progress tracking
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                uploadProgressFill.style.width = percent + '%';
+                uploadProgressText.textContent = `上传中... ${percent}%`;
+            }
         });
         
-        const data = await response.json();
+        xhr.addEventListener('load', () => {
+            uploadProgressFill.style.width = '100%';
+            
+            if (xhr.status === 200) {
+                const data = JSON.parse(xhr.responseText);
+                
+                if (data.success) {
+                    uploadProgressText.textContent = '上传完成！';
+                    
+                    // Store upload result with single code
+                    uploadResults = [{
+                        code: data.code,
+                        files: data.files,
+                        totalSize: data.totalSize,
+                        fileCount: data.fileCount,
+                        success: true
+                    }];
+                    
+                    // Add to my uploaded files
+                    myUploadedFiles.push({
+                        code: data.code,
+                        filename: data.fileCount === 1 ? data.files[0].name : `${data.fileCount} 个文件`,
+                        files: data.files,
+                        size: data.totalSize,
+                        fileCount: data.fileCount,
+                        uploadTime: new Date().toISOString()
+                    });
+                    saveMyUploadedFiles();
+                    
+                    // Show results modal
+                    renderUploadResults();
+                    uploadSuccessModal.classList.add('visible');
+                    
+                    // Refresh file list
+                    loadTransferFiles();
+                } else {
+                    uploadProgressText.textContent = '上传失败';
+                    showToast(data.error || '上传失败', 'error');
+                }
+            } else {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    uploadProgressText.textContent = '上传失败';
+                    showToast(data.error || '上传失败', 'error');
+                } catch (e) {
+                    uploadProgressText.textContent = '上传失败';
+                    showToast('上传失败', 'error');
+                }
+            }
+            
+            // Reset after a short delay
+            setTimeout(() => {
+                uploadProgressContainer.classList.remove('visible');
+                resetTransferUpload();
+            }, 1500);
+        });
         
-        if (response.ok && data.success) {
-            // Show success modal with code
-            modalFilename.textContent = data.filename;
-            modalCode.textContent = data.code;
-            uploadSuccessModal.classList.add('visible');
-            
-            // Add to my uploaded files
-            myUploadedFiles.push({
-                code: data.code,
-                filename: data.filename
-            });
-            
-            // Refresh file list
-            loadTransferFiles();
-            
-            // Reset upload form
-            resetTransferUpload();
-        } else {
-            showToast(data.error || '上传失败', 'error');
-        }
+        xhr.addEventListener('error', () => {
+            uploadProgressText.textContent = '连接错误';
+            showToast('无法连接到服务器', 'error');
+            setTimeout(() => {
+                uploadProgressContainer.classList.remove('visible');
+                transferUploadBtn.disabled = false;
+            }, 2000);
+        });
+        
+        xhr.open('POST', '/api/transfer/upload-batch');
+        xhr.send(formData);
+        
     } catch (error) {
         console.error('Upload error:', error);
+        uploadProgressText.textContent = '上传失败';
         showToast('上传失败', 'error');
+        uploadProgressContainer.classList.remove('visible');
+        transferUploadBtn.disabled = false;
     }
-    
-    transferUploadBtn.disabled = false;
-    transferUploadBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-        上传文件
-    `;
 });
 
+function renderUploadResults() {
+    if (uploadResults.length === 0) {
+        uploadResultsList.innerHTML = '<p>没有上传结果</p>';
+        return;
+    }
+    
+    const result = uploadResults[0]; // Single batch result
+    
+    if (!result.success) {
+        uploadResultsList.innerHTML = `
+            <div class="upload-result-item error">
+                <div class="result-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                </div>
+                <div class="result-info">
+                    <div class="result-error">${result.error || '上传失败'}</div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // First show files list, then the code
+    let html = `
+        <div class="batch-files-summary">
+            <span>共 ${result.fileCount} 个文件</span>
+            <span>总大小: ${formatFileSize(result.totalSize)}</span>
+        </div>
+        <div class="batch-files-list">
+    `;
+    
+    // List all uploaded files
+    result.files.forEach((file, index) => {
+        html += `
+            <div class="batch-file-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span class="batch-file-name" title="${file.name}">${file.name}</span>
+                <span class="batch-file-size">${formatFileSize(file.size)}</span>
+            </div>
+        `;
+    });
+    
+    html += `</div>
+        <div class="batch-code-display">
+            <div class="batch-code-label">下载密码</div>
+            <div class="batch-code-value">
+                <strong>${result.code}</strong>
+                <button class="copy-code-btn" onclick="copySingleCode('${result.code}', this)">复制</button>
+            </div>
+        </div>
+    `;
+    
+    uploadResultsList.innerHTML = html;
+}
+
+function copySingleCode(code, btn) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+            btn.textContent = '已复制';
+            setTimeout(() => { btn.textContent = '复制'; }, 2000);
+        }).catch(() => fallbackCopyText(code));
+    } else {
+        fallbackCopyText(code);
+    }
+}
+
+
 function resetTransferUpload() {
-    transferFile = null;
+    transferFiles = [];
     transferFileInput.value = '';
-    transferFileInfo.classList.remove('visible');
-    transferFileInfo.textContent = '';
+    transferFolderInput.value = '';
+    transferFilesPreview.innerHTML = '';
+    transferFilesPreview.classList.remove('visible');
     transferUploadBtn.disabled = true;
+    uploadBtnText.textContent = '确认上传文件';
 }
 
 // File code operations
@@ -314,6 +655,7 @@ fileDeleteBtn.addEventListener('click', async () => {
             
             // Remove from my uploaded files
             myUploadedFiles = myUploadedFiles.filter(f => f.code !== code);
+            saveMyUploadedFiles();
         } else {
             showToast(data.error || '删除失败', 'error');
         }
@@ -342,13 +684,20 @@ async function loadTransferFiles() {
                     minute: '2-digit' 
                 });
                 const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                const fileCount = file.fileCount || 1;
+                const icon = fileCount > 1 ? 
+                    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"></path>
+                    </svg>` :
+                    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>`;
+                
                 return `
                 <div class="transfer-file-item">
-                    <div class="file-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
+                    <div class="file-icon ${fileCount > 1 ? 'multi' : ''}">
+                        ${icon}
                     </div>
                     <div class="file-details">
                         <div class="file-name" title="${file.filename}">${file.filename}</div>
@@ -372,16 +721,30 @@ async function loadTransferFiles() {
     }
 }
 
-// Modal
-copyCodeBtn.addEventListener('click', () => {
-    const code = modalCode.textContent;
-    navigator.clipboard.writeText(code).then(() => {
+// Fallback copy function using textarea
+function fallbackCopyText(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
         copyCodeBtn.textContent = '已复制';
         setTimeout(() => {
             copyCodeBtn.textContent = '复制';
         }, 2000);
-    });
-});
+    } catch (err) {
+        console.error('复制失败:', err);
+        showToast('复制失败，请手动复制', 'error');
+    }
+    
+    document.body.removeChild(textArea);
+}
 
 modalCloseBtn.addEventListener('click', () => {
     uploadSuccessModal.classList.remove('visible');
@@ -392,6 +755,139 @@ uploadSuccessModal.addEventListener('click', (e) => {
         uploadSuccessModal.classList.remove('visible');
     }
 });
+
+// ==================== My Files Modal ====================
+myFilesBtn.addEventListener('click', () => {
+    renderMyFilesList();
+    myFilesModal.classList.add('visible');
+});
+
+myFilesCloseBtn.addEventListener('click', () => {
+    myFilesModal.classList.remove('visible');
+});
+
+myFilesModal.addEventListener('click', (e) => {
+    if (e.target === myFilesModal) {
+        myFilesModal.classList.remove('visible');
+    }
+});
+
+function renderMyFilesList() {
+    if (myUploadedFiles.length === 0) {
+        myFilesList.innerHTML = `
+            <div class="my-files-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <p>您还没有上传任何文件</p>
+            </div>
+        `;
+        return;
+    }
+
+    myFilesList.innerHTML = myUploadedFiles.map(file => {
+        const fileCount = file.fileCount || 1;
+        const displayName = file.filename;
+        
+        // Show file list if multiple files
+        let filesHtml = '';
+        if (file.files && file.files.length > 1) {
+            const displayFiles = file.files.slice(0, 3);
+            const moreCount = file.files.length - 3;
+            filesHtml = `
+                <div class="my-file-list">
+                    ${displayFiles.map(f => `<span class="my-file-list-item">${escapeHtml(f.name)}</span>`).join('')}
+                    ${moreCount > 0 ? `<span class="my-file-list-more">+${moreCount} 个文件</span>` : ''}
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="my-file-item">
+                <div class="my-file-name">
+                    ${fileCount > 1 ? '📦' : '📁'} ${escapeHtml(displayName)}
+                </div>
+                ${filesHtml}
+                <div class="my-file-info">
+                    <span>${formatFileSize(file.size)}</span>
+                    <span>🕐 ${formatUploadTime(file.uploadTime)}</span>
+                </div>
+                <div class="my-file-code">
+                    <span>密码:</span>
+                    <strong>${file.code}</strong>
+                    <button class="copy-btn" onclick="copyMyFileCode('${file.code}', this)">复制</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function formatUploadTime(isoString) {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 7) return `${diffDays}天前`;
+    
+    return date.toLocaleDateString('zh-CN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function copyMyFileCode(code, btn) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+            btn.textContent = '已复制';
+            setTimeout(() => { btn.textContent = '复制'; }, 2000);
+        }).catch(() => fallbackCopyMyFileCode(code, btn));
+    } else {
+        fallbackCopyMyFileCode(code, btn);
+    }
+}
+
+function fallbackCopyMyFileCode(code, btn) {
+    const textArea = document.createElement('textarea');
+    textArea.value = code;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        btn.textContent = '已复制';
+        setTimeout(() => { btn.textContent = '复制'; }, 2000);
+    } catch (err) {
+        showToast('复制失败', 'error');
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 // ==================== Print Functions ====================
 async function loadPrinters() {

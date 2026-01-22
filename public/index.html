@@ -43,6 +43,12 @@
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
                     <h2>文件传输</h2>
+                    <button class="my-files-btn" id="my-files-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"></path>
+                        </svg>
+                        我上传的
+                    </button>
                 </div>
 
                 <!-- Upload file for transfer -->
@@ -53,18 +59,41 @@
                             <polyline points="17 8 12 3 7 8"></polyline>
                             <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
-                        <span>点击或拖放文件上传</span>
-                        <input type="file" id="transfer-file-input" hidden>
+                        <span>点击或拖放文件/文件夹上传</span>
+                        <span class="upload-hint">支持多选文件或整个文件夹</span>
+                        <input type="file" id="transfer-file-input" multiple hidden>
+                        <input type="file" id="transfer-folder-input" webkitdirectory hidden>
                     </div>
-                    <div class="transfer-file-info" id="transfer-file-info"></div>
+                    <div class="transfer-type-btns">
+                        <button class="transfer-type-btn active" id="select-files-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            选择文件
+                        </button>
+                        <button class="transfer-type-btn" id="select-folder-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"></path>
+                            </svg>
+                            选择文件夹
+                        </button>
+                    </div>
+                    <div class="transfer-files-preview" id="transfer-files-preview"></div>
                     <button class="transfer-btn" id="transfer-upload-btn" disabled>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
                             <polyline points="17 8 12 3 7 8"></polyline>
                             <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
-                        上传文件
+                        <span id="upload-btn-text">确认上传文件</span>
                     </button>
+                    <div class="upload-progress-container" id="upload-progress-container">
+                        <div class="upload-progress-bar">
+                            <div class="upload-progress-fill" id="upload-progress-fill"></div>
+                        </div>
+                        <span class="upload-progress-text" id="upload-progress-text">上传中...</span>
+                    </div>
                 </div>
 
                 <!-- File code input -->
@@ -123,7 +152,7 @@
                                 <line x1="12" y1="3" x2="12" y2="15"></line>
                             </svg>
                         </div>
-                        <h3>拖放文件至此处</h3>
+                        <h3>点击或拖放文档至此处</h3>
                         <p>支持 PDF、Word 文档</p>
                         <input type="file" id="file-input"
                             accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -222,9 +251,9 @@
         </div>
     </div>
 
-    <!-- File Upload Success Modal -->
+    <!-- File Upload Success Modal (Multi-file support) -->
     <div class="modal" id="upload-success-modal">
-        <div class="modal-content">
+        <div class="modal-content upload-results-modal">
             <div class="modal-header">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 11.08V12a10 10 0 11-5.93-9.14"></path>
@@ -233,15 +262,33 @@
                 <h3>文件上传成功</h3>
             </div>
             <div class="modal-body">
-                <p>文件名: <span id="modal-filename"></span></p>
-                <div class="code-display">
-                    <span>下载密码:</span>
-                    <strong id="modal-code"></strong>
-                    <button class="copy-btn" id="copy-code-btn">复制</button>
-                </div>
-                <p class="modal-hint">请保存此密码，其他人可通过此密码下载或删除文件</p>
+                <div class="upload-results-list" id="upload-results-list"></div>
             </div>
             <button class="modal-close-btn" id="modal-close-btn">确定</button>
+        </div>
+    </div>
+
+    <!-- My Uploaded Files Modal -->
+    <div class="modal" id="my-files-modal">
+        <div class="modal-content my-files-modal-content">
+            <div class="modal-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"></path>
+                </svg>
+                <h3>我上传的文件</h3>
+            </div>
+            <div class="modal-body">
+                <div class="my-files-list" id="my-files-list">
+                    <div class="my-files-empty">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <p>您还没有上传任何文件</p>
+                    </div>
+                </div>
+            </div>
+            <button class="modal-close-btn" id="my-files-close-btn">关闭</button>
         </div>
     </div>
 

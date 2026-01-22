@@ -419,7 +419,7 @@ app.delete('/api/queue/completed', (req, res) => {
 
 // ==================== File Transfer API ====================
 
-// Upload file for transfer
+// Upload single file for transfer (legacy support)
 app.post('/api/transfer/upload', transferUpload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '请上传文件' });
@@ -433,12 +433,17 @@ app.post('/api/transfer/upload', transferUpload.single('file'), (req, res) => {
     code = generateCode();
   } while (transferredFiles.has(code));
 
+  // Store as array for consistency with batch upload
   transferredFiles.set(code, {
-    filename: req.file.filename,
-    originalName: originalName,
-    path: req.file.path,
+    files: [{
+      filename: req.file.filename,
+      originalName: originalName,
+      path: req.file.path,
+      size: req.file.size
+    }],
     uploadedAt: new Date().toISOString(),
-    size: req.file.size
+    totalSize: req.file.size,
+    fileCount: 1
   });
 
   console.log(`File uploaded: ${originalName} with code ${code}`);
@@ -450,61 +455,175 @@ app.post('/api/transfer/upload', transferUpload.single('file'), (req, res) => {
   });
 });
 
+// Batch upload multiple files with single code
+app.post('/api/transfer/upload-batch', transferUpload.array('files', 50), (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: '请上传文件' });
+  }
+
+  // Generate unique 6-digit code
+  let code;
+  do {
+    code = generateCode();
+  } while (transferredFiles.has(code));
+
+  const files = req.files.map(file => ({
+    filename: file.filename,
+    originalName: decodeFilename(file.originalname),
+    path: file.path,
+    size: file.size
+  }));
+
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+
+  transferredFiles.set(code, {
+    files: files,
+    uploadedAt: new Date().toISOString(),
+    totalSize: totalSize,
+    fileCount: files.length
+  });
+
+  console.log(`Batch upload: ${files.length} files with code ${code}`);
+
+  res.json({
+    success: true,
+    code: code,
+    files: files.map(f => ({ name: f.originalName, size: f.size })),
+    totalSize: totalSize,
+    fileCount: files.length
+  });
+});
+
 // List transferred files
 app.get('/api/transfer/list', (req, res) => {
-  const files = [];
+  const entries = [];
   transferredFiles.forEach((value, code) => {
-    files.push({
-      code: code,
-      filename: value.originalName,
-      uploadedAt: value.uploadedAt,
-      size: value.size
-    });
+    // Handle both old format (single file) and new format (array of files)
+    if (value.files) {
+      // New format with files array
+      entries.push({
+        code: code,
+        files: value.files.map(f => ({ name: f.originalName, size: f.size })),
+        filename: value.files.length === 1 ? value.files[0].originalName : `${value.files.length} 个文件`,
+        uploadedAt: value.uploadedAt,
+        size: value.totalSize,
+        fileCount: value.fileCount
+      });
+    } else {
+      // Legacy format (single file)
+      entries.push({
+        code: code,
+        filename: value.originalName,
+        uploadedAt: value.uploadedAt,
+        size: value.size,
+        fileCount: 1
+      });
+    }
   });
   
   // Sort by upload time, newest first
-  files.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+  entries.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
   
-  res.json({ files });
+  res.json({ files: entries });
 });
 
-// Download file by code
-app.get('/api/transfer/download/:code', (req, res) => {
+// Get file info by code
+app.get('/api/transfer/info/:code', (req, res) => {
   const code = req.params.code;
-  const file = transferredFiles.get(code);
+  const entry = transferredFiles.get(code);
 
-  if (!file) {
+  if (!entry) {
     return res.status(404).json({ error: '文件不存在或密码错误' });
   }
 
-  if (!fs.existsSync(file.path)) {
-    transferredFiles.delete(code);
-    return res.status(404).json({ error: '文件已被删除' });
+  if (entry.files) {
+    res.json({
+      success: true,
+      code: code,
+      files: entry.files.map(f => ({ name: f.originalName, size: f.size })),
+      totalSize: entry.totalSize,
+      fileCount: entry.fileCount,
+      uploadedAt: entry.uploadedAt
+    });
+  } else {
+    // Legacy format
+    res.json({
+      success: true,
+      code: code,
+      files: [{ name: entry.originalName, size: entry.size }],
+      totalSize: entry.size,
+      fileCount: 1,
+      uploadedAt: entry.uploadedAt
+    });
   }
-
-  console.log(`File downloaded: ${file.originalName} with code ${code}`);
-  
-  res.download(file.path, file.originalName);
 });
 
-// Delete file by code
+// Download file by code (single file or specific file from batch)
+app.get('/api/transfer/download/:code/:index?', (req, res) => {
+  const code = req.params.code;
+  const index = parseInt(req.params.index) || 0;
+  const entry = transferredFiles.get(code);
+
+  if (!entry) {
+    return res.status(404).json({ error: '文件不存在或密码错误' });
+  }
+
+  // Handle new format with files array
+  if (entry.files) {
+    if (index < 0 || index >= entry.files.length) {
+      return res.status(404).json({ error: '文件索引无效' });
+    }
+    
+    const file = entry.files[index];
+    if (!fs.existsSync(file.path)) {
+      // Remove this file from the array
+      entry.files.splice(index, 1);
+      if (entry.files.length === 0) {
+        transferredFiles.delete(code);
+      }
+      return res.status(404).json({ error: '文件已被删除' });
+    }
+
+    console.log(`File downloaded: ${file.originalName} with code ${code}`);
+    res.download(file.path, file.originalName);
+  } else {
+    // Legacy format
+    if (!fs.existsSync(entry.path)) {
+      transferredFiles.delete(code);
+      return res.status(404).json({ error: '文件已被删除' });
+    }
+
+    console.log(`File downloaded: ${entry.originalName} with code ${code}`);
+    res.download(entry.path, entry.originalName);
+  }
+});
+
+// Delete files by code
 app.delete('/api/transfer/delete/:code', (req, res) => {
   const code = req.params.code;
-  const file = transferredFiles.get(code);
+  const entry = transferredFiles.get(code);
 
-  if (!file) {
+  if (!entry) {
     return res.status(404).json({ error: '文件不存在或密码错误' });
   }
 
-  // Delete the file
-  fs.unlink(file.path, (err) => {
-    if (err) {
-      console.error('Error deleting transfer file:', err);
-    }
-  });
+  // Handle new format with files array
+  if (entry.files) {
+    entry.files.forEach(file => {
+      fs.unlink(file.path, (err) => {
+        if (err) console.error('Error deleting transfer file:', err);
+      });
+    });
+    console.log(`Batch deleted: ${entry.files.length} files with code ${code}`);
+  } else {
+    // Legacy format
+    fs.unlink(entry.path, (err) => {
+      if (err) console.error('Error deleting transfer file:', err);
+    });
+    console.log(`File deleted: ${entry.originalName} with code ${code}`);
+  }
 
   transferredFiles.delete(code);
-  console.log(`File deleted: ${file.originalName} with code ${code}`);
 
   res.json({ success: true, message: '文件已删除' });
 });
@@ -532,14 +651,25 @@ function cleanupOldFiles() {
   const now = Date.now();
   const maxAge = 24 * 60 * 60 * 1000; // 24 hours
 
-  transferredFiles.forEach((file, code) => {
-    const uploadedAt = new Date(file.uploadedAt).getTime();
+  transferredFiles.forEach((entry, code) => {
+    const uploadedAt = new Date(entry.uploadedAt).getTime();
     if (now - uploadedAt > maxAge) {
-      fs.unlink(file.path, (err) => {
-        if (err) console.error('Error cleaning up old file:', err);
-      });
+      // Handle new format with files array
+      if (entry.files) {
+        entry.files.forEach(file => {
+          fs.unlink(file.path, (err) => {
+            if (err) console.error('Error cleaning up old file:', err);
+          });
+        });
+        console.log(`Cleaned up ${entry.files.length} old files with code ${code}`);
+      } else {
+        // Legacy format
+        fs.unlink(entry.path, (err) => {
+          if (err) console.error('Error cleaning up old file:', err);
+        });
+        console.log(`Cleaned up old file: ${entry.originalName}`);
+      }
       transferredFiles.delete(code);
-      console.log(`Cleaned up old file: ${file.originalName}`);
     }
   });
 }
