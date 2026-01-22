@@ -311,24 +311,14 @@ transferFolderInput.addEventListener('change', (e) => {
 });
 
 function handleTransferFiles(files) {
-    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB per file
-    const MAX_TOTAL_SIZE = 500 * 1024 * 1024; // 500MB total
-    const MAX_FILES = 50; // Max 50 files at once
+    const MAX_TOTAL_SIZE = 10 * 1024 * 1024 * 1024; // 10GB total
     
     let validFiles = [];
     let totalSize = 0;
     let skippedCount = 0;
     
     for (const file of files) {
-        if (file.size > MAX_FILE_SIZE) {
-            skippedCount++;
-            continue;
-        }
         if (totalSize + file.size > MAX_TOTAL_SIZE) {
-            skippedCount++;
-            continue;
-        }
-        if (validFiles.length >= MAX_FILES) {
             skippedCount++;
             continue;
         }
@@ -337,7 +327,7 @@ function handleTransferFiles(files) {
     }
     
     if (skippedCount > 0) {
-        showToast(`已跳过 ${skippedCount} 个文件（超过大小限制或数量限制）`, 'warning');
+        showToast(`已跳过 ${skippedCount} 个文件（超过10GB总大小限制）`, 'warning');
     }
     
     if (validFiles.length === 0) {
@@ -442,9 +432,33 @@ transferUploadBtn.addEventListener('click', async () => {
     
     // Use batch upload API - all files share one code
     const formData = new FormData();
+    
+    // Check if this is a folder upload (files have relativePath with directory structure)
+    const isFolderUpload = transferFiles.length > 1 && transferFiles.some(f => 
+        f.relativePath && f.relativePath.includes('/')
+    );
+    
+    // Get folder name from first file's path if folder upload
+    let folderName = '';
+    if (isFolderUpload && transferFiles[0].relativePath) {
+        folderName = transferFiles[0].relativePath.split('/')[0];
+    }
+    
     transferFiles.forEach(file => {
         formData.append('files', file);
+        // Send relative paths for folder structure
+        if (file.relativePath) {
+            formData.append('relativePaths', file.relativePath);
+        } else {
+            formData.append('relativePaths', file.name);
+        }
     });
+    
+    // Tell server to create zip if folder upload
+    if (isFolderUpload) {
+        formData.append('createZip', 'true');
+        formData.append('folderName', folderName);
+    }
     
     try {
         // Create XMLHttpRequest for progress tracking

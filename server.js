@@ -6,6 +6,7 @@ const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 const { execFile } = require('child_process');
 const WebSocket = require('ws');
+const archiver = require('archiver');
 
 // Conditionally load pdf-to-printer (Windows only)
 let printer = null;
@@ -200,7 +201,7 @@ const printUpload = multer({
 const transferUpload = multer({
   storage: transferStorage,
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit for transfer
+    fileSize: 10 * 1024 * 1024 * 1024 // 10GB limit for transfer
   }
 });
 
@@ -455,8 +456,8 @@ app.post('/api/transfer/upload', transferUpload.single('file'), (req, res) => {
   });
 });
 
-// Batch upload multiple files with single code
-app.post('/api/transfer/upload-batch', transferUpload.array('files', 50), (req, res) => {
+// Batch upload multiple files with single code (no file count limit, 10GB max)
+app.post('/api/transfer/upload-batch', transferUpload.array('files'), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: '请上传文件' });
   }
@@ -467,32 +468,124 @@ app.post('/api/transfer/upload-batch', transferUpload.array('files', 50), (req, 
     code = generateCode();
   } while (transferredFiles.has(code));
 
-  const files = req.files.map(file => ({
+  const createZip = req.body.createZip === 'true';
+  const folderName = req.body.folderName || 'files';
+  const relativePaths = req.body.relativePaths || [];
+  
+  // Ensure relativePaths is an array
+  const pathsArray = Array.isArray(relativePaths) ? relativePaths : [relativePaths];
+
+  const files = req.files.map((file, index) => ({
     filename: file.filename,
     originalName: decodeFilename(file.originalname),
+    relativePath: pathsArray[index] ? decodeFilename(pathsArray[index]) : decodeFilename(file.originalname),
     path: file.path,
     size: file.size
   }));
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
-  transferredFiles.set(code, {
-    files: files,
-    uploadedAt: new Date().toISOString(),
-    totalSize: totalSize,
-    fileCount: files.length
-  });
+  // If folder upload, create a zip file
+  if (createZip && files.length > 1) {
+    try {
+      const zipFilename = `${Date.now()}-${uuidv4()}.zip`;
+      const zipPath = path.join(transferDir, zipFilename);
+      
+      await createZipArchive(files, zipPath, folderName);
+      
+      // Get zip file size
+      const zipStats = fs.statSync(zipPath);
+      
+      // Delete original files after zipping
+      for (const file of files) {
+        fs.unlink(file.path, (err) => {
+          if (err) console.error('Error deleting original file after zip:', err);
+        });
+      }
+      
+      // Store zip file info
+      transferredFiles.set(code, {
+        files: [{
+          filename: zipFilename,
+          originalName: `${folderName}.zip`,
+          path: zipPath,
+          size: zipStats.size
+        }],
+        uploadedAt: new Date().toISOString(),
+        totalSize: zipStats.size,
+        fileCount: 1,
+        isZipped: true,
+        originalFileCount: files.length
+      });
 
-  console.log(`Batch upload: ${files.length} files with code ${code}`);
+      console.log(`Folder upload: ${files.length} files zipped to ${folderName}.zip with code ${code}`);
 
-  res.json({
-    success: true,
-    code: code,
-    files: files.map(f => ({ name: f.originalName, size: f.size })),
-    totalSize: totalSize,
-    fileCount: files.length
-  });
+      res.json({
+        success: true,
+        code: code,
+        files: [{ name: `${folderName}.zip`, size: zipStats.size }],
+        totalSize: zipStats.size,
+        fileCount: 1,
+        isZipped: true,
+        originalFileCount: files.length
+      });
+    } catch (zipError) {
+      console.error('Zip creation error:', zipError);
+      // Clean up uploaded files on error
+      for (const file of files) {
+        fs.unlink(file.path, () => {});
+      }
+      return res.status(500).json({ error: '创建压缩文件失败' });
+    }
+  } else {
+    // Normal multi-file upload (no zipping)
+    transferredFiles.set(code, {
+      files: files,
+      uploadedAt: new Date().toISOString(),
+      totalSize: totalSize,
+      fileCount: files.length
+    });
+
+    console.log(`Batch upload: ${files.length} files with code ${code}`);
+
+    res.json({
+      success: true,
+      code: code,
+      files: files.map(f => ({ name: f.originalName, size: f.size })),
+      totalSize: totalSize,
+      fileCount: files.length
+    });
+  }
 });
+
+// Create zip archive from files
+function createZipArchive(files, outputPath, folderName) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(outputPath);
+    const archive = archiver('zip', {
+      zlib: { level: 6 } // Compression level (0-9)
+    });
+
+    output.on('close', () => {
+      console.log(`Zip created: ${archive.pointer()} bytes`);
+      resolve();
+    });
+
+    archive.on('error', (err) => {
+      reject(err);
+    });
+
+    archive.pipe(output);
+
+    // Add files to archive with their relative paths
+    for (const file of files) {
+      const relativePath = file.relativePath || file.originalName;
+      archive.file(file.path, { name: relativePath });
+    }
+
+    archive.finalize();
+  });
+}
 
 // List transferred files
 app.get('/api/transfer/list', (req, res) => {
