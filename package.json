@@ -1,0 +1,29 @@
+{
+  "name": "remote-printer",
+  "version": "1.0.0",
+  "description": "Web-based remote printing solution for Windows",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop remote-printer",
+    "pm2:restart": "pm2 restart remote-printer",
+    "pm2:logs": "pm2 logs remote-printer",
+    "pm2:status": "pm2 status"
+  },
+  "keywords": [
+    "printer",
+    "remote",
+    "pdf",
+    "windows"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-to-printer": "^5.3.0",
+    "uuid": "^9.0.0"
+  }
+}
