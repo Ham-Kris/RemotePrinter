@@ -11,6 +11,7 @@ const progressText = document.getElementById('progress-text');
 const queueList = document.getElementById('queue-list');
 const clearBtn = document.getElementById('clear-btn');
 const connectionStatus = document.getElementById('connection-status');
+const statusIndicator = document.querySelector('.status-indicator');
 const toast = document.getElementById('toast');
 
 // Chat Elements
@@ -101,11 +102,18 @@ function initWebSocket() {
     ws.onopen = () => {
         console.log('WebSocket connected');
         connectionStatus.textContent = '已连接';
+        statusIndicator.classList.remove('disconnected', 'error');
+        statusIndicator.classList.add('connected');
+        onlineCount.classList.remove('offline');
     };
     
     ws.onclose = () => {
         console.log('WebSocket disconnected');
         connectionStatus.textContent = '已断开';
+        statusIndicator.classList.remove('connected', 'error');
+        statusIndicator.classList.add('disconnected');
+        onlineCount.textContent = '已离线';
+        onlineCount.classList.add('offline');
         // Reconnect after 3 seconds
         setTimeout(initWebSocket, 3000);
     };
@@ -113,6 +121,10 @@ function initWebSocket() {
     ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         connectionStatus.textContent = '连接错误';
+        statusIndicator.classList.remove('connected', 'disconnected');
+        statusIndicator.classList.add('error');
+        onlineCount.textContent = '已离线';
+        onlineCount.classList.add('offline');
     };
     
     ws.onmessage = (event) => {
@@ -132,6 +144,7 @@ function handleWsMessage(data) {
             break;
         case 'online':
             onlineCount.textContent = `${data.count} 在线`;
+            onlineCount.classList.remove('offline');
             break;
         case 'history':
             // Load chat history
@@ -601,7 +614,7 @@ function renderUploadResults() {
     
     html += `</div>
         <div class="batch-code-display">
-            <div class="batch-code-label">下载密码</div>
+            <div class="batch-code-label">取件码</div>
             <div class="batch-code-value">
                 <strong>${result.code}</strong>
                 <button class="copy-code-btn" onclick="copySingleCode('${result.code}', this)">复制</button>
@@ -638,7 +651,7 @@ function resetTransferUpload() {
 fileFetchBtn.addEventListener('click', async () => {
     const code = fileCodeInput.value.trim();
     if (!code || code.length !== 6) {
-        showToast('请输入6位数字密码', 'error');
+        showToast('请输入6位数字取件码', 'error');
         return;
     }
     
@@ -649,7 +662,7 @@ fileFetchBtn.addEventListener('click', async () => {
 fileDeleteBtn.addEventListener('click', async () => {
     const code = fileCodeInput.value.trim();
     if (!code || code.length !== 6) {
-        showToast('请输入6位数字密码', 'error');
+        showToast('请输入6位数字取件码', 'error');
         return;
     }
     
@@ -818,9 +831,17 @@ function renderMyFilesList() {
         }
         
         return `
-            <div class="my-file-item">
-                <div class="my-file-name">
-                    ${fileCount > 1 ? '📦' : '📁'} ${escapeHtml(displayName)}
+            <div class="my-file-item" data-code="${file.code}">
+                <div class="my-file-header">
+                    <div class="my-file-name">
+                        ${fileCount > 1 ? '📦' : '📁'} ${escapeHtml(displayName)}
+                    </div>
+                    <button class="my-file-delete-btn" onclick="deleteMyFile('${file.code}', this)" title="删除文件">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                        </svg>
+                    </button>
                 </div>
                 ${filesHtml}
                 <div class="my-file-info">
@@ -828,13 +849,67 @@ function renderMyFilesList() {
                     <span>🕐 ${formatUploadTime(file.uploadTime)}</span>
                 </div>
                 <div class="my-file-code">
-                    <span>密码:</span>
+                    <span>取件码:</span>
                     <strong>${file.code}</strong>
                     <button class="copy-btn" onclick="copyMyFileCode('${file.code}', this)">复制</button>
                 </div>
             </div>
         `;
     }).join('');
+}
+
+// Delete file from my uploaded files
+async function deleteMyFile(code, btn) {
+    if (!confirm('确定要删除这个文件吗？')) return;
+    
+    // Disable button during deletion
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span>';
+    
+    try {
+        const response = await fetch(`/api/transfer/delete/${code}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Remove from my uploaded files
+            myUploadedFiles = myUploadedFiles.filter(f => f.code !== code);
+            saveMyUploadedFiles();
+            
+            // Re-render the list
+            renderMyFilesList();
+            
+            // Refresh transfer files list
+            loadTransferFiles();
+            
+            showToast('文件已删除', 'success');
+        } else {
+            // If file not found on server, still remove from local storage
+            if (response.status === 404) {
+                myUploadedFiles = myUploadedFiles.filter(f => f.code !== code);
+                saveMyUploadedFiles();
+                renderMyFilesList();
+                showToast('文件已从列表中移除', 'success');
+            } else {
+                showToast(data.error || '删除失败', 'error');
+                btn.disabled = false;
+                btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                </svg>`;
+            }
+        }
+    } catch (error) {
+        console.error('Delete error:', error);
+        showToast('删除失败', 'error');
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+        </svg>`;
+    }
 }
 
 function formatUploadTime(isoString) {
@@ -920,9 +995,13 @@ async function loadPrinters() {
         }
 
         connectionStatus.textContent = '已连接';
+        statusIndicator.classList.remove('disconnected', 'error');
+        statusIndicator.classList.add('connected');
     } catch (error) {
         console.error('Failed to load printers:', error);
         connectionStatus.textContent = '连接失败';
+        statusIndicator.classList.remove('connected', 'disconnected');
+        statusIndicator.classList.add('error');
     }
 }
 
