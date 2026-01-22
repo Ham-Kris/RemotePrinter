@@ -15,7 +15,8 @@
 </head>
 
 <body>
-    <div class="container">
+    <div class="app-container">
+        <!-- Header -->
         <header class="header">
             <div class="logo">
                 <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -31,79 +32,186 @@
             </div>
         </header>
 
+        <!-- Main Content - Three Column Layout -->
         <main class="main-content">
-            <!-- Upload Section -->
-            <section class="upload-section">
-                <div class="upload-zone" id="upload-zone">
-                    <div class="upload-icon">
+            <!-- Left Column - File Transfer -->
+            <section class="panel file-transfer-section">
+                <div class="panel-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <h2>文件传输</h2>
+                </div>
+
+                <!-- Upload file for transfer -->
+                <div class="file-transfer-upload">
+                    <div class="transfer-upload-zone" id="transfer-upload-zone">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
                             <polyline points="17 8 12 3 7 8"></polyline>
                             <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
+                        <span>点击或拖放文件上传</span>
+                        <input type="file" id="transfer-file-input" hidden>
                     </div>
-                    <h2>拖放文件至此处</h2>
-                    <p>支持 PDF、Word 文档 (.pdf, .doc, .docx)</p>
-                    <input type="file" id="file-input"
-                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        hidden>
-                    <div class="file-info" id="file-info"></div>
+                    <div class="transfer-file-info" id="transfer-file-info"></div>
+                    <button class="transfer-btn" id="transfer-upload-btn" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        上传文件
+                    </button>
                 </div>
 
-                <!-- Printer Selection -->
-                <div class="printer-select-wrapper">
-                    <label for="printer-select">选择打印机:</label>
-                    <select id="printer-select" class="printer-select">
-                        <option value="">默认打印机</option>
-                    </select>
+                <!-- File code input -->
+                <div class="file-code-section">
+                    <div class="divider"><span>或使用密码获取文件</span></div>
+                    <div class="code-input-wrapper">
+                        <input type="text" id="file-code-input" placeholder="输入6位密码" maxlength="6" pattern="[0-9]*">
+                        <button class="code-btn" id="file-fetch-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            下载
+                        </button>
+                        <button class="code-btn delete-btn" id="file-delete-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                            </svg>
+                            删除
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Print Button -->
-                <button class="print-btn" id="print-btn" disabled>
+                <!-- Uploaded files list -->
+                <div class="transfer-files-list" id="transfer-files-list">
+                    <div class="transfer-empty">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <p>暂无上传的文件</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Center Column - Print -->
+            <section class="panel print-section">
+                <div class="panel-header">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M6 9V2h12v7"></path>
                         <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
                         <rect x="6" y="14" width="12" height="8"></rect>
                     </svg>
-                    <span>打印文件</span>
-                </button>
+                    <h2>打印服务</h2>
+                </div>
 
-                <!-- Progress Bar -->
-                <div class="progress-container" id="progress-container">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progress-fill"></div>
+                <!-- Upload Section -->
+                <div class="upload-section">
+                    <div class="upload-zone" id="upload-zone">
+                        <div class="upload-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                        </div>
+                        <h3>拖放文件至此处</h3>
+                        <p>支持 PDF、Word 文档</p>
+                        <input type="file" id="file-input"
+                            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            hidden>
+                        <div class="file-info" id="file-info"></div>
                     </div>
-                    <span class="progress-text" id="progress-text">上传中...</span>
+
+                    <!-- Printer Selection -->
+                    <div class="printer-select-wrapper">
+                        <label for="printer-select">选择打印机:</label>
+                        <select id="printer-select" class="printer-select">
+                            <option value="">默认打印机</option>
+                        </select>
+                    </div>
+
+                    <!-- Print Button -->
+                    <button class="print-btn" id="print-btn" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9V2h12v7"></path>
+                            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+                            <rect x="6" y="14" width="12" height="8"></rect>
+                        </svg>
+                        <span>打印文件</span>
+                    </button>
+
+                    <!-- Progress Bar -->
+                    <div class="progress-container" id="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <span class="progress-text" id="progress-text">上传中...</span>
+                    </div>
+                </div>
+
+                <!-- Print Queue Section -->
+                <div class="queue-section">
+                    <div class="queue-header">
+                        <h3>打印队列</h3>
+                        <button class="clear-btn" id="clear-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                            </svg>
+                            清除已完成
+                        </button>
+                    </div>
+                    <div class="queue-list" id="queue-list">
+                        <div class="queue-empty">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            <p>目前没有打印任务</p>
+                        </div>
+                    </div>
                 </div>
             </section>
 
-            <!-- Print Queue Section -->
-            <section class="queue-section">
-                <div class="queue-header">
-                    <h2>打印队列</h2>
-                    <button class="clear-btn" id="clear-btn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-                        </svg>
-                        清除已完成
-                    </button>
+            <!-- Right Column - Chat -->
+            <section class="panel chat-section">
+                <div class="panel-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"></path>
+                    </svg>
+                    <h2>实时聊天</h2>
+                    <span class="online-count" id="online-count">0 在线</span>
                 </div>
-                <div class="queue-list" id="queue-list">
-                    <div class="queue-empty">
+
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-empty">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"></path>
                         </svg>
-                        <p>目前没有打印任务</p>
+                        <p>暂无消息</p>
                     </div>
+                </div>
+
+                <div class="chat-input-wrapper">
+                    <input type="text" id="chat-input" placeholder="输入消息..." maxlength="500">
+                    <button class="chat-send-btn" id="chat-send-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
                 </div>
             </section>
         </main>
-
-        <footer class="footer">
-            <p>远程打印中心 v1.0</p>
-        </footer>
     </div>
 
     <!-- Toast Notification -->
@@ -111,6 +219,29 @@
         <div class="toast-content">
             <span class="toast-icon"></span>
             <span class="toast-message"></span>
+        </div>
+    </div>
+
+    <!-- File Upload Success Modal -->
+    <div class="modal" id="upload-success-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <h3>文件上传成功</h3>
+            </div>
+            <div class="modal-body">
+                <p>文件名: <span id="modal-filename"></span></p>
+                <div class="code-display">
+                    <span>下载密码:</span>
+                    <strong id="modal-code"></strong>
+                    <button class="copy-btn" id="copy-code-btn">复制</button>
+                </div>
+                <p class="modal-hint">请保存此密码，其他人可通过此密码下载或删除文件</p>
+            </div>
+            <button class="modal-close-btn" id="modal-close-btn">确定</button>
         </div>
     </div>
 

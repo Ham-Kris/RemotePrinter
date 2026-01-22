@@ -2,8 +2,10 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 const { execFile } = require('child_process');
+const WebSocket = require('ws');
 
 // Conditionally load pdf-to-printer (Windows only)
 let printer = null;
@@ -24,7 +26,13 @@ function decodeFilename(filename) {
   }
 }
 
+// Generate 6-digit code
+function generateCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Ensure uploads directory exists (use absolute path for PM2 compatibility)
@@ -33,14 +41,121 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Ensure transfer directory exists
+const transferDir = path.resolve(__dirname, 'transfers');
+if (!fs.existsSync(transferDir)) {
+  fs.mkdirSync(transferDir, { recursive: true });
+}
+
 // Ensure logs directory exists for PM2
 const logsDir = path.resolve(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Configure multer for PDF uploads
-const storage = multer.diskStorage({
+// ==================== WebSocket Setup ====================
+const wss = new WebSocket.Server({ server });
+
+// Store connected clients with their IP
+const clients = new Map();
+// Chat history (keep last 100 messages)
+const chatHistory = [];
+const MAX_CHAT_HISTORY = 100;
+
+// Get client IP from request
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || req.connection.remoteAddress || 'unknown';
+}
+
+// Broadcast to all connected clients
+function broadcast(data, excludeWs = null) {
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      const message = { ...data };
+      if (client === excludeWs) {
+        message.isSelf = true;
+      } else {
+        message.isSelf = false;
+      }
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
+// Send online count to all clients
+function broadcastOnlineCount() {
+  const count = wss.clients.size;
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'online', count }));
+    }
+  });
+}
+
+wss.on('connection', (ws, req) => {
+  const ip = getClientIp(req);
+  clients.set(ws, { ip });
+  
+  console.log(`Client connected: ${ip}`);
+  
+  // Send online count
+  broadcastOnlineCount();
+  
+  // Send chat history to new client
+  const historyForClient = chatHistory.map(msg => ({
+    ...msg,
+    isSelf: msg.ip === ip
+  }));
+  ws.send(JSON.stringify({ type: 'history', messages: historyForClient }));
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      
+      if (data.type === 'chat' && data.message) {
+        const chatMessage = {
+          type: 'chat',
+          ip: ip,
+          message: data.message.substring(0, 500), // Limit message length
+          time: new Date().toISOString()
+        };
+        
+        // Add to history
+        chatHistory.push({ ip: chatMessage.ip, message: chatMessage.message, time: chatMessage.time });
+        if (chatHistory.length > MAX_CHAT_HISTORY) {
+          chatHistory.shift();
+        }
+        
+        // Broadcast to all clients
+        broadcast(chatMessage, ws);
+      }
+    } catch (e) {
+      console.error('Failed to parse WebSocket message:', e);
+    }
+  });
+  
+  ws.on('close', () => {
+    console.log(`Client disconnected: ${ip}`);
+    clients.delete(ws);
+    broadcastOnlineCount();
+  });
+  
+  ws.on('error', (error) => {
+    console.error(`WebSocket error for ${ip}:`, error);
+    clients.delete(ws);
+  });
+});
+
+// ==================== File Transfer Storage ====================
+// Store transferred files: { code: { filename, originalName, path, uploadedAt } }
+const transferredFiles = new Map();
+
+// Configure multer for print uploads
+const printStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
@@ -50,15 +165,26 @@ const storage = multer.diskStorage({
   }
 });
 
-// Supported file types
+// Configure multer for transfer uploads
+const transferStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, transferDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  }
+});
+
+// Supported file types for printing
 const SUPPORTED_MIMETYPES = {
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
 };
 
-const upload = multer({
-  storage: storage,
+const printUpload = multer({
+  storage: printStorage,
   fileFilter: (req, file, cb) => {
     if (SUPPORTED_MIMETYPES[file.mimetype]) {
       cb(null, true);
@@ -68,6 +194,13 @@ const upload = multer({
   },
   limits: {
     fileSize: 50 * 1024 * 1024 // 50MB limit
+  }
+});
+
+const transferUpload = multer({
+  storage: transferStorage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit for transfer
   }
 });
 
@@ -137,6 +270,8 @@ const printQueue = [];
 app.use(express.static(path.resolve(__dirname, 'public')));
 app.use(express.json());
 
+// ==================== Print API ====================
+
 // Get available printers
 app.get('/api/printers', async (req, res) => {
   try {
@@ -149,16 +284,11 @@ app.get('/api/printers', async (req, res) => {
     const printers = await printer.getPrinters();
 
     // Fix Chinese encoding issues on Windows
-    // Some Windows systems return printer names in system default encoding
     const fixedPrinters = printers.map(p => {
-      // Try to detect and fix garbled Chinese characters
       if (p.name) {
         try {
-          // If the name appears garbled (contains replacement characters or looks like mis-decoded text)
-          // Convert from Latin-1 interpreted bytes back to UTF-8
           const bytes = Buffer.from(p.name, 'latin1');
           const utf8Name = bytes.toString('utf8');
-          // Check if conversion produced valid result (no replacement chars)
           if (!utf8Name.includes('\ufffd') && /[\u4e00-\u9fa5]/.test(utf8Name)) {
             return { ...p, name: utf8Name };
           }
@@ -182,7 +312,7 @@ app.get('/api/queue', (req, res) => {
 });
 
 // Upload and print document (PDF or Word)
-app.post('/api/print', upload.single('document'), async (req, res) => {
+app.post('/api/print', printUpload.single('document'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '请上传文件 (PDF 或 Word)' });
   }
@@ -287,11 +417,105 @@ app.delete('/api/queue/completed', (req, res) => {
   res.json({ success: true, removed });
 });
 
+// ==================== File Transfer API ====================
+
+// Upload file for transfer
+app.post('/api/transfer/upload', transferUpload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: '请上传文件' });
+  }
+
+  const originalName = decodeFilename(req.file.originalname);
+  
+  // Generate unique 6-digit code
+  let code;
+  do {
+    code = generateCode();
+  } while (transferredFiles.has(code));
+
+  transferredFiles.set(code, {
+    filename: req.file.filename,
+    originalName: originalName,
+    path: req.file.path,
+    uploadedAt: new Date().toISOString(),
+    size: req.file.size
+  });
+
+  console.log(`File uploaded: ${originalName} with code ${code}`);
+
+  res.json({
+    success: true,
+    code: code,
+    filename: originalName
+  });
+});
+
+// List transferred files
+app.get('/api/transfer/list', (req, res) => {
+  const files = [];
+  transferredFiles.forEach((value, code) => {
+    files.push({
+      code: code,
+      filename: value.originalName,
+      uploadedAt: value.uploadedAt,
+      size: value.size
+    });
+  });
+  
+  // Sort by upload time, newest first
+  files.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+  
+  res.json({ files });
+});
+
+// Download file by code
+app.get('/api/transfer/download/:code', (req, res) => {
+  const code = req.params.code;
+  const file = transferredFiles.get(code);
+
+  if (!file) {
+    return res.status(404).json({ error: '文件不存在或密码错误' });
+  }
+
+  if (!fs.existsSync(file.path)) {
+    transferredFiles.delete(code);
+    return res.status(404).json({ error: '文件已被删除' });
+  }
+
+  console.log(`File downloaded: ${file.originalName} with code ${code}`);
+  
+  res.download(file.path, file.originalName);
+});
+
+// Delete file by code
+app.delete('/api/transfer/delete/:code', (req, res) => {
+  const code = req.params.code;
+  const file = transferredFiles.get(code);
+
+  if (!file) {
+    return res.status(404).json({ error: '文件不存在或密码错误' });
+  }
+
+  // Delete the file
+  fs.unlink(file.path, (err) => {
+    if (err) {
+      console.error('Error deleting transfer file:', err);
+    }
+  });
+
+  transferredFiles.delete(code);
+  console.log(`File deleted: ${file.originalName} with code ${code}`);
+
+  res.json({ success: true, message: '文件已删除' });
+});
+
+// ==================== Error Handling ====================
+
 // Error handling middleware
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: '文件大小超过限制 (最大 50MB)' });
+      return res.status(400).json({ error: '文件大小超过限制' });
     }
     return res.status(400).json({ error: error.message });
   }
@@ -302,16 +526,42 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: '服务器错误' });
 });
 
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
+// ==================== Cleanup old transfer files ====================
+// Clean up files older than 24 hours
+function cleanupOldFiles() {
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+  transferredFiles.forEach((file, code) => {
+    const uploadedAt = new Date(file.uploadedAt).getTime();
+    if (now - uploadedAt > maxAge) {
+      fs.unlink(file.path, (err) => {
+        if (err) console.error('Error cleaning up old file:', err);
+      });
+      transferredFiles.delete(code);
+      console.log(`Cleaned up old file: ${file.originalName}`);
+    }
+  });
+}
+
+// Run cleanup every hour
+setInterval(cleanupOldFiles, 60 * 60 * 1000);
+
+// ==================== Start Server ====================
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║                   远程打印服务器                            ║
+║                   远程打印服务器 v2.0                       ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  服务器已启动！                                             ║
 ║                                                           ║
 ║  本机访问:    http://localhost:${PORT}                      ║
 ║  局域网:      http://<本机IP>:${PORT}                        ║
+║                                                           ║
+║  功能:                                                     ║
+║  - 远程打印 (PDF/Word)                                     ║
+║  - 实时聊天 (WebSocket)                                    ║
+║  - 文件传输 (6位密码下载)                                   ║
 ║                                                           ║
 ║  提示: 使用 ipconfig 查看本机 IP 地址                        ║
 ╚═══════════════════════════════════════════════════════════╝
