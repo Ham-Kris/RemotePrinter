@@ -3,10 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { promisify } = require('util');
-const libre = require('libreoffice-convert');
-
-const libreConvert = promisify(libre.convert);
+const { execFile } = require('child_process');
 
 // Conditionally load pdf-to-printer (Windows only)
 let printer = null;
@@ -74,12 +71,63 @@ const upload = multer({
   }
 });
 
-// Convert Word document to PDF using LibreOffice
-async function convertToPdf(inputPath, outputPath) {
-  const docxBuffer = fs.readFileSync(inputPath);
-  const pdfBuffer = await libreConvert(docxBuffer, '.pdf', undefined);
-  fs.writeFileSync(outputPath, pdfBuffer);
-  return outputPath;
+// Find LibreOffice executable
+function findSoffice() {
+  const possiblePaths = [
+    'soffice', // If in PATH
+    'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+    'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+    '/usr/bin/soffice',
+    '/usr/bin/libreoffice',
+    '/Applications/LibreOffice.app/Contents/MacOS/soffice'
+  ];
+
+  for (const p of possiblePaths) {
+    try {
+      if (p === 'soffice' || fs.existsSync(p)) {
+        return p;
+      }
+    } catch (e) { }
+  }
+  return 'soffice'; // Fallback to PATH
+}
+
+const SOFFICE_PATH = findSoffice();
+console.log(`LibreOffice path: ${SOFFICE_PATH}`);
+
+// Convert Word document to PDF using LibreOffice command line
+async function convertToPdf(inputPath, outputDir) {
+  console.log(`Converting ${inputPath} to PDF...`);
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--headless',
+      '--convert-to', 'pdf',
+      '--outdir', outputDir,
+      inputPath
+    ];
+
+    execFile(SOFFICE_PATH, args, { timeout: 60000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('LibreOffice conversion error:', error);
+        console.error('stderr:', stderr);
+        reject(new Error(`转换失败: ${error.message}`));
+        return;
+      }
+
+      // Get the output PDF path
+      const inputBasename = path.basename(inputPath, path.extname(inputPath));
+      const outputPath = path.join(outputDir, inputBasename + '.pdf');
+
+      if (fs.existsSync(outputPath)) {
+        console.log(`Conversion successful: ${outputPath}`);
+        resolve(outputPath);
+      } else {
+        console.error('PDF not found after conversion. stdout:', stdout);
+        reject(new Error('转换后未找到 PDF 文件'));
+      }
+    });
+  });
 }
 
 // Print queue
@@ -170,14 +218,13 @@ app.post('/api/print', upload.single('document'), async (req, res) => {
     if (fileType === 'doc' || fileType === 'docx') {
       job.status = 'converting';
       try {
-        convertedFilePath = filePath.replace(/\.(docx?|DOCX?)$/, '.pdf');
-        await convertToPdf(filePath, convertedFilePath);
+        convertedFilePath = await convertToPdf(filePath, uploadsDir);
         // Delete original Word file after conversion
         fs.unlinkSync(filePath);
         filePath = convertedFilePath;
       } catch (convError) {
         job.status = 'error';
-        job.error = '文档转换失败，请确保已安装 LibreOffice';
+        job.error = convError.message || '文档转换失败，请确保已安装 LibreOffice';
         fs.unlink(filePath, () => { });
         return res.status(500).json({
           error: job.error,
