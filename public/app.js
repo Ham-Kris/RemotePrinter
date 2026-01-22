@@ -162,7 +162,7 @@ printBtn.addEventListener('click', async () => {
     printBtn.disabled = true;
     progressContainer.classList.add('visible');
     progressFill.style.width = '0%';
-    progressText.textContent = '上傳中...';
+    progressText.textContent = '上传中...';
 
     try {
         const xhr = new XMLHttpRequest();

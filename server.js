@@ -76,14 +76,14 @@ app.get('/api/printers', async (req, res) => {
     if (!printer) {
       return res.json({
         printers: [],
-        message: '列印功能僅支援 Windows 系統'
+        message: '打印功能仅支持 Windows 系统'
       });
     }
     const printers = await printer.getPrinters();
     res.json({ printers });
   } catch (error) {
     console.error('Error getting printers:', error);
-    res.status(500).json({ error: '無法取得印表機列表' });
+    res.status(500).json({ error: '无法获取打印机列表' });
   }
 });
 
@@ -95,7 +95,7 @@ app.get('/api/queue', (req, res) => {
 // Upload and print PDF
 app.post('/api/print', upload.single('pdf'), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: '請上傳 PDF 文件' });
+    return res.status(400).json({ error: '请上传 PDF 文件' });
   }
 
   const jobId = uuidv4();
@@ -108,7 +108,7 @@ app.post('/api/print', upload.single('pdf'), async (req, res) => {
     filename: originalName,
     status: 'pending',
     createdAt: new Date().toISOString(),
-    printer: selectedPrinter || '預設印表機'
+    printer: selectedPrinter || '默认打印机'
   };
 
   printQueue.push(job);
@@ -116,9 +116,9 @@ app.post('/api/print', upload.single('pdf'), async (req, res) => {
   try {
     if (!printer) {
       job.status = 'error';
-      job.error = '列印功能僅支援 Windows 系統';
+      job.error = '打印功能仅支持 Windows 系统';
       return res.status(500).json({
-        error: '列印功能僅支援 Windows 系統',
+        error: '打印功能仅支持 Windows 系统',
         job
       });
     }
@@ -144,7 +144,7 @@ app.post('/api/print', upload.single('pdf'), async (req, res) => {
 
     res.json({
       success: true,
-      message: `文件 "${originalName}" 已發送至印表機`,
+      message: `文件 "${originalName}" 已发送至打印机`,
       job
     });
 
@@ -159,7 +159,7 @@ app.post('/api/print', upload.single('pdf'), async (req, res) => {
     });
 
     res.status(500).json({
-      error: `列印失敗: ${error.message}`,
+      error: `打印失败: ${error.message}`,
       job
     });
   }
@@ -181,7 +181,7 @@ app.delete('/api/queue/completed', (req, res) => {
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: '文件大小超過限制 (最大 50MB)' });
+      return res.status(400).json({ error: '文件大小超过限制 (最大 50MB)' });
     }
     return res.status(400).json({ error: error.message });
   }
@@ -189,21 +189,21 @@ app.use((error, req, res, next) => {
     return res.status(400).json({ error: error.message });
   }
   console.error('Server error:', error);
-  res.status(500).json({ error: '伺服器錯誤' });
+  res.status(500).json({ error: '服务器错误' });
 });
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║                   遠端列印伺服器                            ║
+║                   远程打印服务器                            ║
 ╠═══════════════════════════════════════════════════════════╣
-║  伺服器已啟動！                                             ║
+║  服务器已启动！                                             ║
 ║                                                           ║
-║  本機存取:    http://localhost:${PORT}                      ║
-║  區域網路:    http://<本機IP>:${PORT}                        ║
+║  本机访问:    http://localhost:${PORT}                      ║
+║  局域网:      http://<本机IP>:${PORT}                        ║
 ║                                                           ║
-║  提示: 使用 ipconfig 查看本機 IP 地址                        ║
+║  提示: 使用 ipconfig 查看本机 IP 地址                        ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });
