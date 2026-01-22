@@ -7,6 +7,15 @@
     <title>远程打印中心</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <meta name="description" content="局域网远程 PDF/Word 打印服务">
+    
+    <!-- PWA 支持 -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1a73e8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="打印中心">
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
@@ -293,6 +302,47 @@
     </div>
 
     <script src="app.js"></script>
+    <script>
+        // 注册 Service Worker 用于 PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then((registration) => {
+                        console.log('ServiceWorker 注册成功:', registration.scope);
+                        
+                        // 监听更新
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // 有新版本可用
+                                    if (confirm('发现新版本，是否立即更新？')) {
+                                        newWorker.postMessage({ type: 'SKIP_WAITING' });
+                                        window.location.reload();
+                                    }
+                                }
+                            });
+                        });
+                    })
+                    .catch((error) => {
+                        console.log('ServiceWorker 注册失败:', error);
+                    });
+            });
+        }
+
+        // PWA 安装提示（保存到deferredPrompt供需要时使用）
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            console.log('PWA 可安装，使用浏览器菜单安装');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA 已安装');
+            deferredPrompt = null;
+        });
+    </script>
 </body>
 
 </html>

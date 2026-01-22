@@ -3,6 +3,10 @@ node_modules/
 
 # Uploaded files
 uploads/
+transfers/
+
+# SSL certificates
+ssl/
 
 # Logs
 logs/
@@ -21,6 +25,3 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
-
-uploads/
-transfers/

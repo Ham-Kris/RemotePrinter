@@ -1821,3 +1821,10 @@ body {
         width: 100%;
     }
 }
+
+/* PWA standalone mode adjustments */
+@media (display-mode: standalone) {
+    .header {
+        padding-top: env(safe-area-inset-top, 0);
+    }
+}

@@ -29,5 +29,8 @@
     "pdf-to-printer": "^5.3.0",
     "uuid": "^9.0.0",
     "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.5"
   }
 }
