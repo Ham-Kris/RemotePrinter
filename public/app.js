@@ -14,6 +14,15 @@ const toast = document.getElementById('toast');
 
 let selectedFile = null;
 
+// Supported file types
+const SUPPORTED_TYPES = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+];
+
+const SUPPORTED_EXTENSIONS = ['.pdf', '.doc', '.docx'];
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadPrinters();
@@ -73,6 +82,7 @@ function renderQueue(queue) {
     queueList.innerHTML = queue.map(job => {
         const statusText = {
             pending: '等待中',
+            converting: '转换中',
             printing: '打印中',
             completed: '已完成',
             error: '错误'
@@ -80,6 +90,7 @@ function renderQueue(queue) {
 
         const statusIcon = {
             pending: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
+            converting: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg>',
             printing: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>',
             completed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
             error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
@@ -135,14 +146,18 @@ fileInput.addEventListener('change', (e) => {
 });
 
 function handleFile(file) {
-    if (file.type !== 'application/pdf') {
-        showToast('请上传 PDF 文件', 'error');
+    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+    const isSupported = SUPPORTED_TYPES.includes(file.type) || SUPPORTED_EXTENSIONS.includes(ext);
+
+    if (!isSupported) {
+        showToast('请上传 PDF 或 Word 文件 (.pdf, .doc, .docx)', 'error');
         return;
     }
 
     selectedFile = file;
     const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-    fileInfo.textContent = `📄 ${file.name} (${sizeMB} MB)`;
+    const icon = file.type === 'application/pdf' ? '📄' : '📝';
+    fileInfo.textContent = `${icon} ${file.name} (${sizeMB} MB)`;
     fileInfo.classList.add('visible');
     printBtn.disabled = false;
 }
@@ -152,7 +167,7 @@ printBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
 
     const formData = new FormData();
-    formData.append('pdf', selectedFile);
+    formData.append('document', selectedFile);
 
     const printerName = printerSelect.value;
     if (printerName) {

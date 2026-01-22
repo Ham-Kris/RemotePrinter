@@ -1,14 +1,15 @@
 # 远程打印中心 (Remote Printer)
 
-通过网页界面远程打印 PDF 文件到 Windows 电脑上连接的打印机。
+通过网页界面远程打印 PDF 和 Word 文档到 Windows 电脑上连接的打印机。
 
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2011-blue)
 
 ## 功能特点
 
-- ✅ 拖放或点击上传 PDF 文件
-- ✅ 自动发送到打印机打印
+- ✅ 拖放或点击上传文件
+- ✅ 支持 PDF 和 Word 文档 (.pdf, .doc, .docx)
+- ✅ 自动转换 Word 为 PDF 后打印
 - ✅ 支持选择不同打印机
 - ✅ 打印队列即时显示
 - ✅ 现代化深色主题界面
@@ -18,6 +19,7 @@
 
 - **操作系统**: Windows 11 (或 Windows 10)
 - **Node.js**: 18.x 或更新版本
+- **LibreOffice**: 用于 Word 转换（可选，仅打印 Word 文档时需要）
 - **打印机**: 已安装驱动程序并连接到电脑
 
 ## 安装步骤
@@ -82,10 +84,12 @@ http://192.168.1.100:3000
 ## 使用方法
 
 1. 打开网页界面
-2. 将 PDF 文件拖放到上传区域，或点击选择文件
+2. 将文件拖放到上传区域，或点击选择文件
+   - 支持 PDF 文件 (.pdf)
+   - 支持 Word 文档 (.doc, .docx)
 3. （可选）从下拉菜单选择特定打印机
 4. 点击「打印文件」按钮
-5. 等待文件传送到打印机
+5. 等待文件传送到打印机（Word 文档会自动转换为 PDF）
 
 ## 防火墙设置
 
@@ -135,12 +139,14 @@ node server.js
 | 无法访问网页 | 确认防火墙设置，检查 IP 地址是否正确 |
 | 打印机列表为空 | 检查打印机驱动程序是否正确安装 |
 | 打印失败 | 确认打印机已开启并有纸张，查看 Windows 打印队列 |
-| 只接受 PDF | 本系统仅支持 PDF 文件，其他格式请先转换 |
+| Word 转换失败 | 确保已安装 LibreOffice，并将 soffice 加入 PATH |
+| 支持的文件格式 | PDF (.pdf)、Word (.doc, .docx) |
 
 ## 技术信息
 
 - **后端框架**: Express.js
 - **PDF 打印**: pdf-to-printer
+- **Word 转换**: libreoffice-convert (依赖 LibreOffice)
 - **文件上传**: multer
 - **前端**: 原生 HTML/CSS/JavaScript
 

@@ -461,6 +461,25 @@ body {
     animation: pulse 1s infinite;
 }
 
+.queue-item-icon.converting {
+    background: var(--warning-bg);
+    color: #b06000;
+}
+
+.queue-item-icon.converting svg {
+    animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .queue-item-icon.completed {
     background: var(--success-bg);
     color: var(--success);
@@ -511,6 +530,11 @@ body {
 .queue-item-status.printing {
     background: var(--accent-light);
     color: var(--accent-primary);
+}
+
+.queue-item-status.converting {
+    background: var(--warning-bg);
+    color: #b06000;
 }
 
 .queue-item-status.completed {

@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>远程打印中心</title>
-    <meta name="description" content="局域网远程 PDF 打印服务">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <meta name="description" content="局域网远程 PDF/Word 打印服务">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
@@ -41,9 +42,11 @@
                             <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
                     </div>
-                    <h2>拖放 PDF 文件至此处</h2>
-                    <p>或点击选择文件</p>
-                    <input type="file" id="file-input" accept=".pdf,application/pdf" hidden>
+                    <h2>拖放文件至此处</h2>
+                    <p>支持 PDF、Word 文档 (.pdf, .doc, .docx)</p>
+                    <input type="file" id="file-input"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        hidden>
                     <div class="file-info" id="file-info"></div>
                 </div>
 

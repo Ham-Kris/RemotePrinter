@@ -3,6 +3,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const { promisify } = require('util');
+const libre = require('libreoffice-convert');
+
+const libreConvert = promisify(libre.convert);
 
 // Conditionally load pdf-to-printer (Windows only)
 let printer = null;
@@ -49,19 +53,34 @@ const storage = multer.diskStorage({
   }
 });
 
+// Supported file types
+const SUPPORTED_MIMETYPES = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
+};
+
 const upload = multer({
   storage: storage,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
+    if (SUPPORTED_MIMETYPES[file.mimetype]) {
       cb(null, true);
     } else {
-      cb(new Error('只接受 PDF 文件'), false);
+      cb(new Error('只接受 PDF 或 Word 文件 (.pdf, .doc, .docx)'), false);
     }
   },
   limits: {
     fileSize: 50 * 1024 * 1024 // 50MB limit
   }
 });
+
+// Convert Word document to PDF using LibreOffice
+async function convertToPdf(inputPath, outputPath) {
+  const docxBuffer = fs.readFileSync(inputPath);
+  const pdfBuffer = await libreConvert(docxBuffer, '.pdf', undefined);
+  fs.writeFileSync(outputPath, pdfBuffer);
+  return outputPath;
+}
 
 // Print queue
 const printQueue = [];
@@ -80,7 +99,29 @@ app.get('/api/printers', async (req, res) => {
       });
     }
     const printers = await printer.getPrinters();
-    res.json({ printers });
+
+    // Fix Chinese encoding issues on Windows
+    // Some Windows systems return printer names in system default encoding
+    const fixedPrinters = printers.map(p => {
+      // Try to detect and fix garbled Chinese characters
+      if (p.name) {
+        try {
+          // If the name appears garbled (contains replacement characters or looks like mis-decoded text)
+          // Convert from Latin-1 interpreted bytes back to UTF-8
+          const bytes = Buffer.from(p.name, 'latin1');
+          const utf8Name = bytes.toString('utf8');
+          // Check if conversion produced valid result (no replacement chars)
+          if (!utf8Name.includes('\ufffd') && /[\u4e00-\u9fa5]/.test(utf8Name)) {
+            return { ...p, name: utf8Name };
+          }
+        } catch (e) {
+          // Keep original if conversion fails
+        }
+      }
+      return p;
+    });
+
+    res.json({ printers: fixedPrinters });
   } catch (error) {
     console.error('Error getting printers:', error);
     res.status(500).json({ error: '无法获取打印机列表' });
@@ -92,15 +133,17 @@ app.get('/api/queue', (req, res) => {
   res.json({ queue: printQueue.slice(-50).reverse() }); // Last 50 jobs, newest first
 });
 
-// Upload and print PDF
-app.post('/api/print', upload.single('pdf'), async (req, res) => {
+// Upload and print document (PDF or Word)
+app.post('/api/print', upload.single('document'), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: '请上传 PDF 文件' });
+    return res.status(400).json({ error: '请上传文件 (PDF 或 Word)' });
   }
 
   const jobId = uuidv4();
-  const filePath = req.file.path;
+  let filePath = req.file.path;
   const originalName = decodeFilename(req.file.originalname);
+  const fileType = SUPPORTED_MIMETYPES[req.file.mimetype];
+  let convertedFilePath = null;
   const selectedPrinter = req.body.printer || null;
 
   const job = {
@@ -121,6 +164,26 @@ app.post('/api/print', upload.single('pdf'), async (req, res) => {
         error: '打印功能仅支持 Windows 系统',
         job
       });
+    }
+
+    // Convert Word files to PDF if needed
+    if (fileType === 'doc' || fileType === 'docx') {
+      job.status = 'converting';
+      try {
+        convertedFilePath = filePath.replace(/\.(docx?|DOCX?)$/, '.pdf');
+        await convertToPdf(filePath, convertedFilePath);
+        // Delete original Word file after conversion
+        fs.unlinkSync(filePath);
+        filePath = convertedFilePath;
+      } catch (convError) {
+        job.status = 'error';
+        job.error = '文档转换失败，请确保已安装 LibreOffice';
+        fs.unlink(filePath, () => { });
+        return res.status(500).json({
+          error: job.error,
+          job
+        });
+      }
     }
 
     job.status = 'printing';
@@ -185,7 +248,7 @@ app.use((error, req, res, next) => {
     }
     return res.status(400).json({ error: error.message });
   }
-  if (error.message === '只接受 PDF 文件') {
+  if (error.message.includes('只接受')) {
     return res.status(400).json({ error: error.message });
   }
   console.error('Server error:', error);
