@@ -182,9 +182,11 @@ function addChatMessage(ip, message, time, isSelf) {
     messageDiv.innerHTML = `
         <div class="message-header">
             <span class="sender-ip">${ip}</span>
+        </div>
+        <div class="message-content">
+            <div class="message-bubble">${escapeHtml(message)}</div>
             <span class="message-time">${timeStr}</span>
         </div>
-        <div class="message-bubble">${escapeHtml(message)}</div>
     `;
     
     chatMessages.appendChild(messageDiv);
@@ -846,7 +848,7 @@ function renderMyFilesList() {
                 ${filesHtml}
                 <div class="my-file-info">
                     <span>${formatFileSize(file.size)}</span>
-                    <span>🕐 ${formatUploadTime(file.uploadTime)}</span>
+                    <span>${formatUploadTime(file.uploadTime)}</span>
                 </div>
                 <div class="my-file-code">
                     <span>取件码:</span>

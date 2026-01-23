@@ -27,6 +27,42 @@
     --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* CSS Variables - Dark Theme */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #1f1f1f;
+        --bg-secondary: #2d2d2d;
+        --bg-card: #292929;
+        --bg-hover: #3d3d3d;
+        --border-color: #404040;
+        --text-primary: #e8eaed;
+        --text-secondary: #9aa0a6;
+        --text-muted: #6e6e6e;
+        --accent-primary: #8ab4f8;
+        --accent-secondary: #669df6;
+        --accent-light: rgba(138, 180, 248, 0.15);
+        --accent-glow: rgba(138, 180, 248, 0.2);
+        --success: #81c995;
+        --success-bg: rgba(129, 201, 149, 0.15);
+        --error: #f28b82;
+        --error-bg: rgba(242, 139, 130, 0.15);
+        --warning: #fdd663;
+        --warning-bg: rgba(253, 214, 99, 0.15);
+        --warning-text: #fdd663;
+        --chat-self: #8ab4f8;
+        --chat-other: #3d3d3d;
+        --btn-hover: #5a8fd8;
+        --modal-overlay: rgba(0, 0, 0, 0.6);
+    }
+}
+
+/* Light theme specific variables */
+:root {
+    --warning-text: #b06000;
+    --btn-hover: #1557b0;
+    --modal-overlay: rgba(0, 0, 0, 0.4);
+}
+
 /* Reset & Base */
 *,
 *::before,
@@ -99,7 +135,7 @@ body {
     border-radius: 100px;
     font-size: 0.6875rem;
     font-weight: 500;
-    color: #b06000;
+    color: var(--warning-text);
     border: 1px solid rgba(251, 188, 4, 0.3);
     transition: var(--transition);
 }
@@ -121,7 +157,7 @@ body {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #b06000;
+    background: var(--warning-text);
     animation: pulse 2s infinite;
     transition: var(--transition);
 }
@@ -489,7 +525,7 @@ body {
 }
 
 .transfer-btn:hover:not(:disabled) {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 .transfer-btn:disabled {
@@ -671,7 +707,7 @@ body {
 }
 
 .transfer-file-item .file-icon.multi svg {
-    color: #b06000;
+    color: var(--warning-text);
 }
 
 .transfer-file-item .file-details {
@@ -836,7 +872,7 @@ body {
 }
 
 .print-btn:hover:not(:disabled) {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 .print-btn:active:not(:disabled) {
@@ -1021,7 +1057,7 @@ body {
 
 .queue-item-icon.pending {
     background: var(--warning-bg);
-    color: #b06000;
+    color: var(--warning-text);
 }
 
 .queue-item-icon.printing {
@@ -1032,7 +1068,7 @@ body {
 
 .queue-item-icon.converting {
     background: var(--warning-bg);
-    color: #b06000;
+    color: var(--warning-text);
 }
 
 .queue-item-icon.converting svg {
@@ -1088,7 +1124,7 @@ body {
 
 .queue-item-status.pending {
     background: var(--warning-bg);
-    color: #b06000;
+    color: var(--warning-text);
 }
 
 .queue-item-status.printing {
@@ -1098,7 +1134,7 @@ body {
 
 .queue-item-status.converting {
     background: var(--warning-bg);
-    color: #b06000;
+    color: var(--warning-text);
 }
 
 .queue-item-status.completed {
@@ -1200,10 +1236,12 @@ body {
 
 .chat-message.self {
     align-self: flex-end;
+    align-items: flex-end;
 }
 
 .chat-message.other {
     align-self: flex-start;
+    align-items: flex-start;
 }
 
 .chat-message .message-header {
@@ -1223,8 +1261,21 @@ body {
     font-family: 'Monaco', 'Consolas', monospace;
 }
 
+.chat-message .message-content {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.chat-message.self .message-content {
+    flex-direction: row-reverse;
+}
+
 .chat-message .message-time {
     color: var(--text-muted);
+    font-size: 0.6875rem;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .chat-message .message-bubble {
@@ -1233,6 +1284,8 @@ body {
     font-size: 0.875rem;
     line-height: 1.5;
     word-break: break-word;
+    width: fit-content;
+    max-width: 100%;
 }
 
 .chat-message.self .message-bubble {
@@ -1292,7 +1345,7 @@ body {
 }
 
 .chat-send-btn:hover {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 .chat-send-btn svg {
@@ -1307,7 +1360,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--modal-overlay);
     display: none;
     align-items: center;
     justify-content: center;
@@ -1392,7 +1445,7 @@ body {
 }
 
 .copy-btn:hover {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 .modal-hint {
@@ -1415,7 +1468,7 @@ body {
 }
 
 .modal-close-btn:hover {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 /* Upload Results Modal */
@@ -1523,7 +1576,7 @@ body {
 }
 
 .copy-single-btn:hover {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 .upload-results-modal .modal-close-btn {
@@ -1624,7 +1677,7 @@ body {
 }
 
 .copy-code-btn:hover {
-    background: #1557b0;
+    background: var(--btn-hover);
 }
 
 /* My Files Modal */
@@ -1842,6 +1895,76 @@ body {
 .toast-message {
     font-size: 0.875rem;
     color: white;
+}
+
+/* ==================== Dark Mode Overrides ==================== */
+@media (prefers-color-scheme: dark) {
+    /* Buttons with accent background need darker text in dark mode */
+    .transfer-btn,
+    .print-btn,
+    .chat-send-btn,
+    .copy-btn,
+    .modal-close-btn,
+    .copy-single-btn,
+    .copy-code-btn {
+        color: #1f1f1f;
+    }
+
+    .chat-message.self .message-bubble {
+        color: #1f1f1f;
+    }
+
+    /* My Files button hover */
+    .my-files-btn:hover {
+        color: #1f1f1f;
+    }
+
+    /* Toast adjustments */
+    .toast {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+    }
+
+    .toast-message {
+        color: var(--text-primary);
+    }
+
+    /* Scrollbar for dark mode */
+    .transfer-files-list::-webkit-scrollbar-thumb,
+    .queue-list::-webkit-scrollbar-thumb,
+    .chat-messages::-webkit-scrollbar-thumb,
+    .upload-results-list::-webkit-scrollbar-thumb,
+    .my-files-list::-webkit-scrollbar-thumb,
+    .batch-files-list::-webkit-scrollbar-thumb {
+        background: #555;
+    }
+
+    .transfer-files-list::-webkit-scrollbar-thumb:hover,
+    .queue-list::-webkit-scrollbar-thumb:hover,
+    .chat-messages::-webkit-scrollbar-thumb:hover,
+    .upload-results-list::-webkit-scrollbar-thumb:hover,
+    .my-files-list::-webkit-scrollbar-thumb:hover,
+    .batch-files-list::-webkit-scrollbar-thumb:hover {
+        background: #666;
+    }
+
+    /* Input placeholder color */
+    input::placeholder,
+    .code-input-wrapper input::placeholder,
+    .chat-input-wrapper input::placeholder {
+        color: #6e6e6e;
+    }
+
+    /* Select element for dark mode */
+    .printer-select {
+        background: var(--bg-card);
+        color: var(--text-primary);
+    }
+
+    .printer-select option {
+        background: var(--bg-card);
+        color: var(--text-primary);
+    }
 }
 
 /* ==================== Responsive ==================== */

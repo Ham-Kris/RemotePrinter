@@ -652,9 +652,10 @@ app.get('/api/transfer/info/:code', (req, res) => {
 });
 
 // Download file by code (single file or specific file from batch)
-app.get('/api/transfer/download/:code/:index?', (req, res) => {
+// If multiple files and no index specified, create a zip on-the-fly
+app.get('/api/transfer/download/:code/:index?', async (req, res) => {
   const code = req.params.code;
-  const index = parseInt(req.params.index) || 0;
+  const indexParam = req.params.index;
   const entry = transferredFiles.get(code);
 
   if (!entry) {
@@ -663,24 +664,70 @@ app.get('/api/transfer/download/:code/:index?', (req, res) => {
 
   // Handle new format with files array
   if (entry.files) {
-    if (index < 0 || index >= entry.files.length) {
-      return res.status(404).json({ error: '文件索引无效' });
-    }
-    
-    const file = entry.files[index];
-    if (!fs.existsSync(file.path)) {
-      // Remove this file from the array
-      entry.files.splice(index, 1);
-      if (entry.files.length === 0) {
-        transferredFiles.delete(code);
-      }
+    // Check if all files exist
+    const validFiles = entry.files.filter(f => fs.existsSync(f.path));
+    if (validFiles.length === 0) {
+      transferredFiles.delete(code);
       return res.status(404).json({ error: '文件已被删除' });
     }
+    
+    // Update entry if some files were deleted
+    if (validFiles.length !== entry.files.length) {
+      entry.files = validFiles;
+      entry.fileCount = validFiles.length;
+      entry.totalSize = validFiles.reduce((sum, f) => sum + f.size, 0);
+    }
 
-    console.log(`File downloaded: ${file.originalName} with code ${code}`);
-    res.download(file.path, file.originalName);
+    // If specific index requested, download that file
+    if (indexParam !== undefined) {
+      const index = parseInt(indexParam);
+      if (index < 0 || index >= entry.files.length) {
+        return res.status(404).json({ error: '文件索引无效' });
+      }
+      
+      const file = entry.files[index];
+      console.log(`File downloaded: ${file.originalName} with code ${code} (index ${index})`);
+      return res.download(file.path, file.originalName);
+    }
+    
+    // Single file - download directly
+    if (entry.files.length === 1) {
+      const file = entry.files[0];
+      console.log(`File downloaded: ${file.originalName} with code ${code}`);
+      return res.download(file.path, file.originalName);
+    }
+    
+    // Multiple files - create zip on-the-fly and stream to client
+    console.log(`Creating zip for ${entry.files.length} files with code ${code}`);
+    
+    const zipFilename = `files-${code}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"; filename*=UTF-8''${encodeURIComponent(zipFilename)}`);
+    
+    const archive = archiver('zip', {
+      zlib: { level: 6 }
+    });
+    
+    archive.on('error', (err) => {
+      console.error('Zip streaming error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: '创建压缩文件失败' });
+      }
+    });
+    
+    archive.pipe(res);
+    
+    // Add all files to the archive
+    for (const file of entry.files) {
+      const fileName = file.relativePath || file.originalName;
+      archive.file(file.path, { name: fileName });
+    }
+    
+    await archive.finalize();
+    console.log(`Zip download completed: ${entry.files.length} files with code ${code}`);
+    
   } else {
-    // Legacy format
+    // Legacy format (single file)
     if (!fs.existsSync(entry.path)) {
       transferredFiles.delete(code);
       return res.status(404).json({ error: '文件已被删除' });
