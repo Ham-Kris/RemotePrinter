@@ -834,7 +834,7 @@ function renderMyFilesList() {
             <div class="my-file-item" data-code="${file.code}">
                 <div class="my-file-header">
                     <div class="my-file-name">
-                        ${fileCount > 1 ? '📦' : '📁'} ${escapeHtml(displayName)}
+                        ${escapeHtml(displayName)}
                     </div>
                     <button class="my-file-delete-btn" onclick="deleteMyFile('${file.code}', this)" title="删除文件">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
